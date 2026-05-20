@@ -1,13 +1,13 @@
 import { Router } from "express";
 import verifyUser from "../middlewares/auth.middleware.js";
 import upload from "../middlewares/multer.middleware.js";
-import { createPost, deletePost, getAllPosts, getPostById, togglePublishStatus, updatePost,getUserPosts } from "../controllers/post.controllers.js";
+import { createPost, updatePost, deletePost, getAllPosts, getPostById, togglePublishStatus, getUserPosts } from "../controllers/post.controllers.js";
 const router = Router();
 
 router.use(verifyUser);
 
 // routes
-router.route("/create-post").post(upload.single("image"), createPost);
+router.route("/create").post(upload.single("image"), createPost);
 
 router.route("/:postId")
 .patch(updatePost)

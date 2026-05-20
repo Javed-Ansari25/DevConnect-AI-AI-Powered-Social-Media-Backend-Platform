@@ -3,12 +3,12 @@ import Post from "../models/Post.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { uploadOnCloudinary } from "../config/cloudinary.js";
 
 const createPost = asyncHandler(async (req, res) => {
-    const {title, content} = req.body;
+    const {title, description} = req.body;
 
-    if (!title || !content) {
+    if (!title || !description) {
         throw new ApiError(400, "All fields are required");
     }
 
@@ -16,13 +16,13 @@ const createPost = asyncHandler(async (req, res) => {
 
     let imageUrl = "";
     if (imageLocalPath) {
-        const image = await uploadOnCloudinary(imageLocalPath, "image");
+        const image = await uploadOnCloudinary(imageLocalPath);
         imageUrl = image?.url || "";
     }
 
     const post = await Post.create({
         title,
-        content,
+        description,
         image : imageUrl,
         owner: req.user._id
     })
@@ -38,20 +38,20 @@ const createPost = asyncHandler(async (req, res) => {
 
 const updatePost = asyncHandler(async (req, res) => {
     const { postId } = req.params;
-    const { title, content } = req.body;
+    const { title, description } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(postId)) {
         throw new ApiError(400, "Invalid postId");
     }
 
-    if (!title || !content) {
+    if (title != null && description != null && (title.trim() === "" || description.trim() === "")) {
         throw new ApiError(400, "All fields are required");
     }
 
     const updatePost = await Post.findByIdAndUpdate(
         {_id : postId, owner : req?.user._id},
         {
-            $set : {title, content}
+          $set : {title, description}
         },
         {new : true}
     )
@@ -85,7 +85,7 @@ const deletePost = asyncHandler(async (req, res) => {
 });
 
 const getUserPosts = asyncHandler(async (req, res) => {
-  const {userId} = req.params;
+  const {userId, page = 1, limit = 10} = req.params;
 
   if (!userId) {
     throw new ApiError(400, "User id is required");
@@ -100,6 +100,8 @@ const getUserPosts = asyncHandler(async (req, res) => {
     isPublished: true 
   })
     .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(Number(limit))
     .populate("owner", "username avatar");
 
   return res.status(200).json(
@@ -124,7 +126,7 @@ const getPostById = asyncHandler(async (req, res) => {
   const post = await Post.findOne({
     _id: postId,
     isPublished: true
-  }).populate("owner", "username email avatar");
+  }).populate("owner", "username avatar");
 
   if (!post) {
     throw new ApiError(404, "Post not found or unpublished");
@@ -139,11 +141,11 @@ const getAllPosts = asyncHandler(async (req, res) => {
     const {page = 1, limit = 10, search = ""} = req.query;
 
     const query = {
-        title: { $regex: search, $options: "i" }
+      title: { $regex: search, $options: "i" }
     };
 
     if (req.user?.role !== "admin") {
-        query.isPublished = true;
+      query.isPublished = true;
     }
 
     const posts = await Post.find(query)

@@ -8,14 +8,16 @@ const postSchema = new mongoose.Schema(
       trim: true
     },
 
-    content: {
+    description: {
       type: String,
       required: true
     },
 
-    image: {
-      type: String   // optional (Cloudinary URL)
-    },
+    image: 
+      {
+        type: String,
+        trim: true
+      },
 
     owner: {
       type: mongoose.Schema.Types.ObjectId,
@@ -27,9 +29,15 @@ const postSchema = new mongoose.Schema(
       type: Boolean,
       default: true
     },
+
+    views: {
+      type: Number,
+      default: 0
+    }
   },
   { timestamps: true }
 );
 
 const Post = mongoose.model("Post", postSchema);
 export default Post;
+

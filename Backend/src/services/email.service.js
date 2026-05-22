@@ -105,7 +105,7 @@ const sendEmailOTP = async (email, otp) => {
                       <br /><br />
                       Use the OTP below to verify your email address.
                       This OTP will expire in
-                      <strong>30 seconds</strong>.
+                      <strong>1 minute</strong>.
                     </p>
 
                   </td>

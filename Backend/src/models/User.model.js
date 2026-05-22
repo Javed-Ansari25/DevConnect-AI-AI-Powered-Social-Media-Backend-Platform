@@ -66,21 +66,7 @@ const userSchema = new mongoose.Schema(
       default: null,
       select: false,
     },
-
-    followers: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-    ],
-
-    following: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-    ],
-
+    
     posts: [
       {
         type: mongoose.Schema.Types.ObjectId,

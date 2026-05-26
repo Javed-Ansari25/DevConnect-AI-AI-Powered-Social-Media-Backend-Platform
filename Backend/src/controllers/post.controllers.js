@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import Post from "../models/Post.model.js";
+import Like from "../models/Like.model.js";
+import PostView from "../models/Views.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -85,43 +87,78 @@ const deletePost = asyncHandler(async (req, res) => {
 });
 
 const getUserPosts = asyncHandler(async (req, res) => {
-  const {userId, page = 1, limit = 10} = req.params;
 
-  if (!userId) {
-    throw new ApiError(400, "User id is required");
-  }
+  const { userId } = req.params;
+
+  const { page = 1, limit = 10 } = req.query;
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     throw new ApiError(400, "Invalid user id");
   }
 
-  const posts = await Post.find({
-    owner: userId,
-    isPublished: true 
-  })
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * limit)
-    .limit(Number(limit))
-    .populate("owner", "username avatar");
+  const [posts, totalPosts] = await Promise.all([
+
+    Post.find({
+      owner: userId,
+      isPublished: true
+    })
+      .populate("owner", "username avatar")
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit))
+      .lean(),
+
+    Post.countDocuments({
+      owner: userId,
+      isPublished: true
+    })
+  ]);
+
+  const postsWithLikes = await Promise.all(
+
+    posts.map(async (post) => {
+
+      const [likesCount, liked] = await Promise.all([
+
+        Like.countDocuments({
+          post: post._id
+        }),
+
+        req.user?._id
+          ? Like.findOne({
+              post: post._id,
+              likedBy: req.user._id
+            })
+          : null
+      ]);
+
+      return {
+        ...post,
+        likesCount,
+        isLiked: !!liked
+      };
+    })
+  );
 
   return res.status(200).json(
     new ApiResponse(
       200,
       {
-        totalPosts: posts.length,
-        posts
+        totalPosts,
+        posts: postsWithLikes
       },
       "User posts fetched successfully"
     )
   );
 });
 
+
 const getPostById = asyncHandler(async (req, res) => {
   const { postId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(postId)) {
-        throw new ApiError(400, "Invalid postId");
-    }
+  if (!mongoose.Types.ObjectId.isValid(postId)) {
+    throw new ApiError(400, "Invalid post id");
+  }
 
   const post = await Post.findOne({
     _id: postId,
@@ -129,45 +166,147 @@ const getPostById = asyncHandler(async (req, res) => {
   }).populate("owner", "username avatar");
 
   if (!post) {
-    throw new ApiError(404, "Post not found or unpublished");
+    throw new ApiError(404, "Post not found");
   }
 
+  // check already viewed or not
+  const alreadyViewed = await PostView.findOne({
+    post: postId,
+    viewedBy: req.user._id
+  });
+
+  // if not viewed before
+  if (!alreadyViewed) {
+
+    await Promise.all([
+
+      // save view record
+      PostView.create({
+        post: postId,
+        viewedBy: req.user._id
+      }),
+
+      // increment view
+      Post.findByIdAndUpdate(
+        postId,
+        {
+          $inc: { views: 1 }
+        }
+      )
+    ]);
+  }
+
+  // parallel queries
+  const [
+    likesCount,
+    likedUsers,
+    liked
+  ] = await Promise.all([
+
+    Like.countDocuments({
+      post: postId
+    }),
+
+    Like.find({
+      post: postId
+    }).populate("likedBy", "username avatar"),
+
+    Like.findOne({
+      post: postId,
+      likedBy: req.user._id
+    })
+  ]);
+
   return res.status(200).json(
-    new ApiResponse(200, post, "Post fetched successfully")
+    new ApiResponse(
+      200,
+      {
+        post: {
+          ...post.toObject(),
+          views: alreadyViewed
+            ? post.views
+            : post.views + 1
+        },
+
+        likesCount,
+        likedUsers,
+        isLiked: !!liked
+      },
+      "Post fetched successfully"
+    )
   );
 });
 
 const getAllPosts = asyncHandler(async (req, res) => {
-    const {page = 1, limit = 10, search = ""} = req.query;
 
-    const query = {
-      title: { $regex: search, $options: "i" }
-    };
+  const { page = 1, limit = 10, search = "" } = req.query;
 
-    if (req.user?.role !== "admin") {
-      query.isPublished = true;
-    }
+  const query = {
+    title: { $regex: search, $options: "i" }
+  };
 
-    const posts = await Post.find(query)
-    .populate({
-      path: "owner",
-      match: req.user?.role === "admin" ? {} : { isBlocked: false },
-      select: "username avatar isBlocked"
+  if (req.user?.role !== "admin") {
+    query.isPublished = true;
+  }
+
+  // parallel execution
+  const [posts, totalPosts] = await Promise.all([
+
+    Post.find(query)
+      .populate({
+        path: "owner",
+        match:
+          req.user?.role === "admin"
+            ? {}
+            : { isBlocked: false },
+        select: "username avatar"
+      })
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit))
+      .lean(),
+
+    Post.countDocuments(query)
+  ]);
+
+  // add likes data
+  const postsWithLikes = await Promise.all(
+
+    posts.map(async (post) => {
+
+      const [likesCount, liked] = await Promise.all([
+
+        Like.countDocuments({
+          post: post._id
+        }),
+
+        req.user?._id
+          ? Like.findOne({
+              post: post._id,
+              likedBy: req.user._id
+            })
+          : null
+      ]);
+
+      return {
+        ...post,
+        likesCount,
+        isLiked: !!liked
+      };
     })
-    .skip((page - 1) * limit)
-    .limit(Number(limit))
-    .sort({ createdAt: -1 });
+  );
 
-    if (!posts) {
-        throw new ApiError(404, "posts not found");
-    }
-
-    const totalPosts = await Post.countDocuments(query);
-
-    return res.status(200).json(
-        new ApiResponse(200, {posts, totalPosts}, "Post fetch successfully")
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        posts: postsWithLikes,
+        totalPosts
+      },
+      "Posts fetched successfully"
     )
-})
+  );
+});
 
 const togglePublishStatus = asyncHandler(async (req, res) => {
   const { postId  } = req.params;

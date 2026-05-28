@@ -238,7 +238,6 @@ const getPostById = asyncHandler(async (req, res) => {
 });
 
 const getAllPosts = asyncHandler(async (req, res) => {
-
   const { page = 1, limit = 10, search = "" } = req.query;
 
   const query = {

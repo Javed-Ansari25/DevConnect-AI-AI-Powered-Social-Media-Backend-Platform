@@ -3,13 +3,13 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { uploadOnCloudinary } from "../config/cloudinary.js";
 import User from "../models/User.model.js";
-import Follower from "../models/followers.model.js";
+import Follow from "../models/followers.model.js";
 
 const getProfile = asyncHandler(async (req, res) => {
   const [user, followersCount, followingCount] = await Promise.all([
      User.findById(req.user?._id).select("-password -refreshToken"),
-     Follower.countDocuments({ following: req.user?._id }),
-     Follower.countDocuments({ follower: req.user?._id })
+     Follow.countDocuments({ following: req.user?._id }),
+     Follow.countDocuments({ follower: req.user?._id })
   ]);
 
   if (!user) {

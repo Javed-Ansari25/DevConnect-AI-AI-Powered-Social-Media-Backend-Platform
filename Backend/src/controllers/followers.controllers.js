@@ -15,7 +15,7 @@ const followUser = asyncHandler(async (req, res) => {
         throw new ApiError(400, "You cannot follow yourself");
     }
 
-    const alreadyFollowing = await Follower.findOne({
+    const alreadyFollowing = await Follow.findOne({
         follower: req.user?._id,
         following: userId
     });
@@ -24,7 +24,7 @@ const followUser = asyncHandler(async (req, res) => {
         throw new ApiError(400, "You are already following this user");
     }
 
-    const follower = await Follower.create({
+    const follower = await Follow.create({
         follower: req.user?._id,
         following: userId
     });
@@ -41,7 +41,7 @@ const unfollowUser = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid user ID");
     }
 
-    const alreadyFollowing = await Follower.findOne({
+    const alreadyFollowing = await Follow   .findOne({
         follower: req.user?._id,
         following: userId
     });
@@ -50,7 +50,7 @@ const unfollowUser = asyncHandler(async (req, res) => {
         throw new ApiError(400, "You are not following this user");
     }
 
-    await Follower.findOneAndDelete({
+    await Follow.findOneAndDelete({
         follower: req.user?._id,
         following: userId
     });
@@ -73,11 +73,11 @@ const getFollowers = asyncHandler(async (req, res) => {
 
     const [followersCount, followers] = await Promise.all([
 
-        Follower.countDocuments({
+        Follow.countDocuments({
             following: userId
         }),
 
-        Follower.find({
+        Follow.find({
             following: userId
         })
         .populate("follower", "username fullName avatar")
@@ -116,11 +116,11 @@ const getFollowing = asyncHandler(async (req, res) => {
 
     const [followingCount, following] = await Promise.all([
 
-        Follower.countDocuments({
+        Follow.countDocuments({
             follower: userId
         }),
 
-        Follower.find({
+        Follow.find({
             follower: userId
         })
         .populate("following", "username fullName avatar")

@@ -9,7 +9,7 @@ router.use(verifyUser);
 // Routes
 router.route("/follow/:userId").post(followUser)
 router.route("/unfollow/:userId").post(unfollowUser)
-router.route("/followers").get(getFollowers)
-router.route("/following").get(getFollowing)
+router.route("/:userId").get(getFollowers)
+router.route("/following/:userId").get(getFollowing)
 
 export default router;

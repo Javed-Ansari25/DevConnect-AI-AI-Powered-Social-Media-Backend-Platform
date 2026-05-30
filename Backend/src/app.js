@@ -6,6 +6,7 @@ import helmet from "helmet";
 const app = express();
 app.use(helmet());
 
+// Configure CORS to allow requests from specified origin with credentials
 app.use(cors({
     origin: process.env.CORS_ORIGIN,
     credentials: true
@@ -23,6 +24,7 @@ import postRoute from "./routes/post.routes.js";
 import commentRoute from "./routes/comment.routes.js";
 import likeRoute from "./routes/like.routes.js";
 import followersRoute from "./routes/followers.route.js";
+import chatRoute from "./routes/chat.routes.js";
 
 // route declaration
 app.use("/api/v1/auth", authRoute);
@@ -31,6 +33,7 @@ app.use("/api/v1/post", postRoute);
 app.use("/api/v1/comment", commentRoute);
 app.use("/api/v1/like", likeRoute);
 app.use("/api/v1/followers", followersRoute);
+app.use("/api/v1/chat", chatRoute);
 
 
 // Global Error Handler 

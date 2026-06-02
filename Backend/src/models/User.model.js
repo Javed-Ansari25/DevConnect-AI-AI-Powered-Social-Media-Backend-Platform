@@ -28,7 +28,6 @@ const userSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       unique: true,
-      index: true,
       match: [/^\S+@\S+\.\S+$/, "Please enter a valid email"],
     },
 
@@ -67,12 +66,6 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
     
-    posts: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Post",
-      },
-    ],
 
     isVerified: {
       type: Boolean,

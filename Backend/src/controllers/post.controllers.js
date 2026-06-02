@@ -87,7 +87,6 @@ const deletePost = asyncHandler(async (req, res) => {
 });
 
 const getUserPosts = asyncHandler(async (req, res) => {
-
   const { userId } = req.params;
 
   const { page = 1, limit = 10 } = req.query;
@@ -115,7 +114,6 @@ const getUserPosts = asyncHandler(async (req, res) => {
   ]);
 
   const postsWithLikes = await Promise.all(
-
     posts.map(async (post) => {
 
       const [likesCount, liked] = await Promise.all([

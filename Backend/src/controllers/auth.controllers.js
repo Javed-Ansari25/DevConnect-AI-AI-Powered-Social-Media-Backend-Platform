@@ -1,14 +1,18 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import User from '../models/User.model.js';
-import OTP from '../models/Otp.model.js';
+import redisClient from '../config/redis.js';
 
-import { ApiError } from '../utils/ApiError.js'; 
+import {
+  generateAndStoreOTP,
+  verifyStoredOTP,
+  clearOTP,
+} from '../services/otp.service.js';
+import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { generateTokens, cookieOptions } from '../utils/token.js';
 import { sendEmailOTP } from '../services/email.service.js';
-import { generateOTP } from '../utils/generateOtp.js';
 
 const register = asyncHandler(async (req, res) => {
   const { fullName, username, email, password } = req.body;
@@ -17,12 +21,10 @@ const register = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'All fields are required');
   }
 
-  const existingUser = await User.findOne({
-    $or: [{ username }, { email }],
-  });
+  const existingUser = await User.findOne({ email });
 
   if (existingUser) {
-    throw new ApiError(409, 'User already exists, please login');
+    throw new ApiError(409, 'User already exists');
   }
 
   const user = await User.create({
@@ -30,23 +32,9 @@ const register = asyncHandler(async (req, res) => {
     username,
     email,
     password,
-    isVerified: false,
   });
 
-  // delete old otp if exists
-  await OTP.deleteMany({ user: user._id });
-
-  // generate otp
-  const otp = generateOTP();
-
-  // save otp
-  await OTP.create({
-    user: user._id,
-    otp,
-    expiresAt: new Date(Date.now() + 60 * 1000), // valid for 1 minute
-  });
-
-  // send email
+  const otp = await generateAndStoreOTP(email);
   await sendEmailOTP(email, otp);
 
   return res.status(201).json(
@@ -56,7 +44,7 @@ const register = asyncHandler(async (req, res) => {
         _id: user._id,
         email: user.email,
       },
-      'OTP sent to email. Please verify your account',
+      'OTP sent successfully',
     ),
   );
 });
@@ -68,7 +56,9 @@ const verifyOTP = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Email and OTP are required');
   }
 
-  const user = await User.findOne({ email });
+  const user = await User.findOne({
+    email,
+  });
 
   if (!user) {
     throw new ApiError(404, 'User not found');
@@ -78,41 +68,23 @@ const verifyOTP = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'User already verified');
   }
 
-  const otpDoc = await OTP.findOne({ user: user._id });
+  const otpResult = await verifyStoredOTP(email, otp);
 
-  if (!otpDoc) {
-    throw new ApiError(400, 'OTP expired');
-  }
-
-  // check expiry
-  if (otpDoc.expiresAt < new Date()) {
-    await OTP.deleteOne({ _id: otpDoc._id });
-
-    throw new ApiError(400, 'OTP expired');
-  }
-
-  // check attempts
-  if (otpDoc.Attempts >= 5) {
-    await OTP.deleteOne({ _id: otpDoc._id });
-
-    throw new ApiError(429, 'Too many attempts, please request a new OTP');
-  }
-
-  // validate otp
-  const isOtpCorrect = await otpDoc.isOtpValid(otp);
-
-  if (!isOtpCorrect) {
-    otpDoc.Attempts += 1;
-    await otpDoc.save();
-
-    throw new ApiError(400, 'Invalid OTP');
+  if (!otpResult.success) {
+    throw new ApiError(400, otpResult.message);
   }
 
   user.isVerified = true;
+
   const { accessToken, refreshToken } = await generateTokens(user);
+
   user.refreshToken = refreshToken;
-  await user.save({ validateBeforeSave: false });
-  await OTP.deleteOne({ _id: otpDoc._id });
+
+  await user.save({
+    validateBeforeSave: false,
+  });
+
+  await clearOTP(email);
 
   return res
     .status(200)
@@ -150,17 +122,10 @@ const resendOTP = asyncHandler(async (req, res) => {
   }
 
   // delete previous otp
-  await OTP.deleteMany({ user: user._id });
+  await clearOTP(email);
 
   // generate new otp
-  const otp = generateOTP();
-
-  // save otp
-  await OTP.create({
-    user: user._id,
-    otp,
-    expiresAt: new Date(Date.now() + 60 * 1000), // valid for 1 minute
-  });
+  const otp = await generateAndStoreOTP(email);
 
   // send email
   await sendEmailOTP(email, otp);
@@ -191,18 +156,10 @@ const login = asyncHandler(async (req, res) => {
   }
 
   if (!user.isVerified) {
-    // delete old otp
-    await OTP.deleteMany({ user: user._id });
+    await clearOTP(user.email);
 
     // generate new otp
-    const otp = generateOTP();
-
-    // save otp
-    await OTP.create({
-      user: user._id,
-      otp,
-      expiresAt: new Date(Date.now() + 60 * 1000),
-    });
+    const otp = await generateAndStoreOTP(user.email);
 
     // send otp
     await sendEmailOTP(user.email, otp);
@@ -228,8 +185,7 @@ const login = asyncHandler(async (req, res) => {
         200,
         {
           _id: user._id,
-          username: user.username,
-          email: user.email,
+          username: user.username
         },
         'User logged in successfully',
       ),

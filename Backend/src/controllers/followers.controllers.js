@@ -9,14 +9,14 @@ const followUser = asyncHandler(async (req, res) => {
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
         throw new ApiError(400, "Invalid user ID");
-    }
+    }  
 
     if (userId === req.user?._id.toString()) {
         throw new ApiError(400, "You cannot follow yourself");
     }
 
     const alreadyFollowing = await Follow.findOne({
-        follower: req.user?._id,
+        follower: req.user?._id, 
         following: userId
     });
 
@@ -41,7 +41,7 @@ const unfollowUser = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Invalid user ID");
     }
 
-    const alreadyFollowing = await Follow   .findOne({
+    const alreadyFollowing = await Follow.findOne({
         follower: req.user?._id,
         following: userId
     });
@@ -61,7 +61,6 @@ const unfollowUser = asyncHandler(async (req, res) => {
 });
 
 const getFollowers = asyncHandler(async (req, res) => {
-
     const { userId } = req.params;
     const { page = 1, limit = 10 } = req.query;
 
@@ -80,7 +79,7 @@ const getFollowers = asyncHandler(async (req, res) => {
         Follow.find({
             following: userId
         })
-        .populate("follower", "username fullName avatar")
+        .populate("follower", "username avatar")
         .skip(skip)
         .limit(Number(limit))
         .sort({ createdAt: -1 })
@@ -146,5 +145,7 @@ const getFollowing = asyncHandler(async (req, res) => {
         )
     );
 });
+
+
 
 export { followUser, unfollowUser, getFollowers, getFollowing };

@@ -6,47 +6,110 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 const getAdminDashboard = asyncHandler(async (req, res) => {
-  const totalUsers = await User.countDocuments();
-  const totalPosts = await Post.countDocuments();
-  const publishedPosts = await Post.countDocuments({ isPublished: true });
-  const unpublishedPosts = await Post.countDocuments({ isPublished: false });
+  const [
+    totalUsers,
+    totalPosts,
+    publishedPosts,
+    unpublishedPosts
+  ] = await Promise.all([
+    User.countDocuments({ role: "user" }),
+    Post.countDocuments(),
+    Post.countDocuments({ isPublished: true }),
+    Post.countDocuments({ isPublished: false })
+  ]);
 
   return res.status(200).json(
-    new ApiResponse(200, {
-      totalUsers,
-      totalPosts,
-      publishedPosts,
-      unpublishedPosts
-    }, "Admin dashboard data fetched")
+    new ApiResponse(
+      200,
+      {
+        totalUsers,
+        totalPosts,
+        publishedPosts,
+        unpublishedPosts
+      },
+      "Admin dashboard data fetched successfully"
+    )
   );
 });
 
 const getAllUsersForAdmin = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 20;
+  const search = req.query.search?.trim() || "";
 
-  const users = await User.find({
+  const query = {
     role: "user",
     _id: { $ne: req.user._id }
-  })
-    .select("-password -refreshToken")
-    .skip((page - 1) * limit)
-    .limit(Number(limit))
-    .sort({ createdAt: -1 });
+  }
 
-  const totalUsers = await User.countDocuments();
+  if (search) {
+    query.$or = [
+      { username: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } }
+    ];
+  }
+
+  const [users, totalUsers] = await Promise.all([
+    User.find(query)
+      .select("-password -refreshToken")
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+
+    User.countDocuments(query)
+  ]);
 
   return res.status(200).json(
-    new ApiResponse(200, { users, totalUsers }, "Users fetched successfully")
+    new ApiResponse(
+      200,
+      {
+        users,
+        totalUsers,
+        currentPage: page,
+        totalPages: Math.ceil(totalUsers / limit)
+      },
+      "Users fetched successfully"
+    )
   );
 });
 
 const getAllPostsForAdmin = asyncHandler(async (req, res) => {
-  const posts = await Post.find()
-    .populate("owner", "username email")
-    .sort({ createdAt: -1 });
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 20;
+  const search = req.query.search?.trim() || "";
+
+  const query = {};
+
+  if (search) {
+    query.title = {
+      $regex: search,
+      $options: "i"
+    };
+  }
+
+  const [posts, totalPosts] = await Promise.all([
+    Post.find(query)
+      .populate("owner", "username email")
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+
+    Post.countDocuments(query)
+  ]);
 
   return res.status(200).json(
-    new ApiResponse(200, posts, "All posts fetched for admin")
+    new ApiResponse(
+      200,
+      {
+        posts,
+        totalPosts,
+        currentPage: page,
+        totalPages: Math.ceil(totalPosts / limit)
+      },
+      "Posts fetched successfully"
+    )
   );
 });
 
@@ -54,7 +117,7 @@ const adminDeletePost = asyncHandler(async (req, res) => {
   const { postId } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(postId)) {
-    throw new ApiError(400, "Invalid postId");
+    throw new ApiError(400, "Invalid post id");
   }
 
   const post = await Post.findByIdAndDelete(postId);
@@ -64,7 +127,11 @@ const adminDeletePost = asyncHandler(async (req, res) => {
   }
 
   return res.status(200).json(
-    new ApiResponse(200, {}, "Post deleted by admin")
+    new ApiResponse(
+      200,
+      null,
+      "Post deleted successfully by admin"
+    )
   );
 });
 
@@ -72,33 +139,92 @@ const toggleUserStatus = asyncHandler(async (req, res) => {
   const { userId } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
-    throw new ApiError(400, "Invalid userId");
+    throw new ApiError(400, "Invalid user id");
+  }
+
+  if (userId === req.user._id.toString()) {
+    throw new ApiError(400, "You cannot block/unblock yourself");
   }
 
   const user = await User.findOneAndUpdate(
-    {_id : userId}, 
-    // Values ​​are being flipped within the database itself
+    { _id: userId },
     [
       {
         $set: {
-          isBlocked: { $not: "$isBlocked" }
+          isBlocked: {
+            $not: "$isBlocked"
+          }
         }
       }
     ],
-    { new: true, updatePipeline: true }
+    { new: true }
   );
 
   if (!user) {
-    throw new ApiError(404, "user not Block or unauthorized");
+    throw new ApiError(404, "User not found");
   }
 
   return res.status(200).json(
     new ApiResponse(
       200,
-      { isBlocked: user.isBlocked },
-      "User status updated"
+      {
+        userId: user._id,
+        isBlocked: user.isBlocked
+      },
+      `User ${user.isBlocked ? "blocked" : "unblocked"} successfully`
+      )
+  );
+});
+
+const getSingleUser = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new ApiError(400, "Invalid user id");
+  }
+
+  const user = await User.findById(userId);
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  return res.status(200).json(
+    new ApiResponse(200, user, "User fetched successfully")
+  );
+});
+
+const getSinglePost = asyncHandler(async (req, res) => {
+  const { postId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(postId)) {
+    throw new ApiError(400, "Invalid post id");
+  }
+
+  const post = await Post.findById(postId)
+    .populate("owner", "username email");
+
+  if (!post) {
+    throw new ApiError(404, "Post not found");
+  }
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      post,
+      "Post fetched successfully"
     )
   );
 });
 
-export {getAdminDashboard, getAllPostsForAdmin, getAllUsersForAdmin, adminDeletePost, toggleUserStatus}
+
+export {
+  getAdminDashboard,
+  getAllUsersForAdmin,
+  getAllPostsForAdmin,
+  getSinglePost,
+  getSingleUser, 
+  adminDeletePost,
+  toggleUserStatus
+};
+
